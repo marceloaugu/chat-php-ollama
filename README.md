@@ -85,6 +85,7 @@ chat-php-ollama/
 * **Frontend:** HTML5, Vanilla CSS (Dark Mode / Glassmorphism) e JavaScript ES6+ (`fetch`, `ReadableStream`, `AbortController`).
 * **Bibliotecas Client-Side (via CDN):**
   * [Marked.js](https://marked.js.org/) — Renderização de Markdown.
+  * [DOMPurify](https://github.com/cure53/DOMPurify) (`3.2.4`) — Sanitização do HTML gerado a partir do Markdown.
   * [Highlight.js](https://highlightjs.org/) (`11.9.0`, tema `github-dark`) — Realce de sintaxe em blocos de código.
   * [FontAwesome](https://fontawesome.com/) (`6.4.0`) e fonte **Inter** (Google Fonts).
 * **Banco de Dados:** MySQL 8.0+ ou MariaDB 10.11+.
@@ -338,6 +339,16 @@ Métricas calculadas por `chat.php` e gravadas na coluna `metrics` do banco de d
 
 ---
 
-## 13. Licença
+## 13. Segurança
+
+Este projeto foi pensado para **uso local ou em rede confiável** e não deve ser exposto diretamente à internet:
+
+* **Sem autenticação:** `api.php` e `chat.php` não exigem login. Quem acessar a aplicação pode ler e apagar conversas e usar o servidor de inferência configurado. Se precisar de acesso remoto, proteja-a com VPN ou com um proxy reverso autenticado.
+* **Credenciais do Docker:** as senhas de `docker-compose.yml` são apenas exemplos, e a porta `3306` do banco fica publicada no host. Troque as senhas e remova essa publicação fora do ambiente local.
+* **Conteúdo gerado:** as respostas do modelo são tratadas como não confiáveis e sanitizadas com DOMPurify antes de serem exibidas.
+
+---
+
+## 14. Licença
 
 Distribuído sob a [licença MIT](LICENSE). Os avisos de componentes de terceiros embutidos no código estão em [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).

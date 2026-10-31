@@ -80,6 +80,16 @@ function toggleReasoning() {
 const SEND_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="white"><path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.109zM6.637 10.07l7.494-7.494-4.747 4.747L6.637 10.07z"/></svg>';
 const STOP_ICON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="white"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>';
 
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function renderMarkdown(text) {
+    return DOMPurify.sanitize(marked.parse(text));
+}
+
 function autoResize(textarea) {
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
@@ -345,14 +355,14 @@ function addMessage(role, content, isStreaming = false, metrics = null) {
                 <i class="fa-solid fa-chevron-down thought-chevron"></i>
             </div>
             <div class="thought-body">
-                <div class="thought-content">${marked.parse(parsed.thought)}</div>
+                <div class="thought-content">${renderMarkdown(parsed.thought)}</div>
             </div>`;
         msgDiv.appendChild(thoughtContainer);
     }
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
-    bubble.innerHTML = marked.parse(parsed.content || (parsed.hasThought ? '' : content));
+    bubble.innerHTML = renderMarkdown(parsed.content || (parsed.hasThought ? '' : content));
     msgDiv.appendChild(bubble);
 
     // Destaca códigos e adiciona botão de copiar
@@ -525,7 +535,7 @@ async function enviar() {
                     try {
                         const json = JSON.parse(line);
                         if (json.error) {
-                            aiMsgDiv.querySelector('.bubble').innerHTML = "❌ " + json.error;
+                            aiMsgDiv.querySelector('.bubble').innerHTML = "❌ " + escapeHtml(json.error);
                             timeoutReached = true;
                             break;
                         }
@@ -561,7 +571,7 @@ async function enviar() {
 
                                 const thoughtContent = aiMsgDiv.querySelector('.thought-content');
                                 if (thoughtContent) {
-                                    thoughtContent.innerHTML = marked.parse(fullAiThinking);
+                                    thoughtContent.innerHTML = renderMarkdown(fullAiThinking);
                                     const thoughtBody = aiMsgDiv.querySelector('.thought-body');
                                     if (thoughtBody) thoughtBody.scrollTop = thoughtBody.scrollHeight;
                                 }
@@ -624,7 +634,7 @@ async function enviar() {
 
                                     const thoughtContent = aiMsgDiv.querySelector('.thought-content');
                                     if (thoughtContent) {
-                                        thoughtContent.innerHTML = marked.parse(fullAiThinking);
+                                        thoughtContent.innerHTML = renderMarkdown(fullAiThinking);
                                     }
                                 } else {
                                     fullAiContent += rawChunk;
@@ -634,7 +644,7 @@ async function enviar() {
 
                                 const bubble = aiMsgDiv.querySelector('.bubble');
                                 if (bubble) {
-                                    bubble.innerHTML = marked.parse(fullAiContent);
+                                    bubble.innerHTML = renderMarkdown(fullAiContent);
                                     applyCodeBlockFeatures(aiMsgDiv);
                                 }
                             }
@@ -683,13 +693,13 @@ async function enviar() {
             // Garante renderização final completa do Markdown
             const bubble = aiMsgDiv.querySelector('.bubble');
             if (bubble && fullAiContent !== "") {
-                bubble.innerHTML = marked.parse(fullAiContent);
+                bubble.innerHTML = renderMarkdown(fullAiContent);
                 applyCodeBlockFeatures(aiMsgDiv);
             }
 
             const thoughtContent = aiMsgDiv.querySelector('.thought-content');
             if (thoughtContent && fullAiThinking !== "") {
-                thoughtContent.innerHTML = marked.parse(fullAiThinking);
+                thoughtContent.innerHTML = renderMarkdown(fullAiThinking);
             }
 
             // Calcula e exibe as métricas de performance consolidadas
@@ -740,7 +750,7 @@ async function enviar() {
         clearInterval(liveStatsInterval);
         if (globalErr.name !== 'AbortError') {
             console.error("Global fetch error:", globalErr);
-            aiMsgDiv.querySelector('.bubble').innerHTML = "❌ Erro crítico: " + globalErr.message;
+            aiMsgDiv.querySelector('.bubble').innerHTML = "❌ Erro crítico: " + escapeHtml(globalErr.message);
             finalizeChat();
         }
     }
@@ -764,7 +774,7 @@ async function checkServiceStatus() {
                 
                 if (runningModels.length > 0) {
                     const activeModelNames = runningModels.map(m => m.name.replace(':latest', '')).join(', ');
-                    text.innerHTML = `Online <span style="font-size: 11px; opacity: 0.8; margin-left: 5px;">• Ativo: 🚀 <b>${activeModelNames}</b></span>`;
+                    text.innerHTML = `Online <span style="font-size: 11px; opacity: 0.8; margin-left: 5px;">• Ativo: 🚀 <b>${escapeHtml(activeModelNames)}</b></span>`;
                 } else {
                     text.innerHTML = 'Online <span style="font-size: 11px; opacity: 0.6; margin-left: 5px;">• Nenhum ativo</span>';
                 }
@@ -923,7 +933,7 @@ document.getElementById('model-select').addEventListener('change', async (e) => 
     if (sendBtn) sendBtn.disabled = true;
     if (msgInput) msgInput.disabled = true;
     
-    statusText.innerHTML = `<span style="color: #fbbf24;"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 5px;"></i> Inicializando <b>${selectedModel}</b>...</span>`;
+    statusText.innerHTML = `<span style="color: #fbbf24;"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 5px;"></i> Inicializando <b>${escapeHtml(selectedModel)}</b>...</span>`;
     
     try {
         const formData = new FormData();
@@ -938,7 +948,7 @@ document.getElementById('model-select').addEventListener('change', async (e) => 
         if (result.success) {
             localStorage.setItem('selectedModel', selectedModel);
             // Sucesso!
-            statusText.innerHTML = `<span style="color: #3fb950;"><i class="fa-solid fa-circle-check" style="margin-right: 5px;"></i> Ativo: 🚀 <b>${selectedModel}</b></span>`;
+            statusText.innerHTML = `<span style="color: #3fb950;"><i class="fa-solid fa-circle-check" style="margin-right: 5px;"></i> Ativo: 🚀 <b>${escapeHtml(selectedModel)}</b></span>`;
             
             // Adiciona um pequeno delay visual e atualiza a lista de modelos para mostrar o foguete
             setTimeout(async () => {
