@@ -78,7 +78,7 @@ chat-php-ollama/
 ├── schema.sql          # Esquema SQL de referência (tabelas conversations e messages)
 ├── script.js           # Lógica de frontend, seletor de modelos com status de VRAM, raciocínio e métricas
 ├── style.css           # Estilização dark mode / Glassmorphism
-└── test_ollama.php     # Script utilitário para diagnóstico rápido de conectividade com /api/tags
+└── test_api.php     # Script utilitário para diagnóstico rápido de conectividade com /api/tags
 ```
 
 ---
@@ -183,7 +183,7 @@ As variáveis de ambiente são carregadas automaticamente por `db.php` a partir 
 1. Inicie o serviço do Ollama (ex.: `ollama serve`), o Apache e o MySQL/MariaDB.
 2. (Opcional) Teste a comunicação direta do PHP com o Ollama executando:
    ```bash
-   php test_ollama.php
+   php test_api.php
    ```
 3. Acesse no navegador:
    ```text
@@ -324,7 +324,7 @@ Métricas calculadas por `chat.php` e gravadas na coluna `metrics` do banco de d
 
 * **Status exibe `Offline` na barra lateral:**
   * Verifique se o processo do Ollama está ativo (`ollama list` ou `curl http://localhost:11434/api/tags`).
-  * Execute `php test_ollama.php` no terminal para verificar o código HTTP retornado ao PHP.
+  * Execute `php test_api.php` no terminal para verificar o código HTTP retornado ao PHP.
   * Caso o Ollama rode em outra máquina da rede local, certifique-se de que o serviço do Ollama foi iniciado com `OLLAMA_HOST=0.0.0.0:11434` no servidor de inferência e que o arquivo `.env` do PHP aponta para o IP correto.
 * **Alerta `O modelo precisa ser instalado primeiro. Execute no terminal: ollama pull ...`:**
   * Os modelos listados em **Modelos Sugeridos** com o ícone `⏳ (Pull necessário)` ainda não estão baixados no servidor Ollama. Execute `ollama pull <modelo>` no servidor antes de selecioná-los.
