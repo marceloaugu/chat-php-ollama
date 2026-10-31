@@ -1,0 +1,50 @@
+# --- Credenciais e Variáveis de Ambiente ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+wp-config.php
+config.php
+database.php
+conexao.php
+connection.php
+
+# --- Dumps, Backups e Dados Operacionais ---
+*.sql
+!schema.sql
+*.sql.gz
+*.bak
+*.dump
+*.bkp
+backups/
+BACKUP/
+bkp/
+DB/
+uploads/
+
+# --- Logs, Cache e Arquivos Temporários ---
+*.log
+logs/
+error_log
+npm-debug.log*
+.cache/
+cache/
+tmp/
+temp/
+*.tmp
+*.swp
+*~
+
+# --- Dependências Geradas ---
+vendor/
+node_modules/
+
+# --- Configurações Específicas da Máquina / SO / IDE ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.exe
+
