@@ -17,6 +17,10 @@ O **`chat-php-ollama`** é uma aplicação web leve em PHP para conversar com mo
 * **Telemetria detalhada do Ollama:** Exibe velocidade em `tok/s`, tempo total, contagem de tokens gerados, velocidade de avaliação do prompt (`prompt_eval_duration`) e tempo de carga do modelo em milissegundos (`load_duration`).
 * **Persistência em MySQL / MariaDB e RAG simplificado:** Histórico completo por conversa, registro do modelo e métricas por mensagem, e injeção automática de contexto relevante de mensagens anteriores.
 
+### Motivação
+
+Este é um projeto pessoal, feito por curiosidade, para o **estudo de LLMs em uso local**.
+
 ---
 
 ## 2. Objetivos
