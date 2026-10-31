@@ -415,7 +415,11 @@ function stopResponse() {
 async function enviar() {
     const input = document.getElementById('msg-input');
     const msg = input.value.trim();
-    if (!msg || !currentConversationId) return;
+    if (!msg) return;
+    if (!currentConversationId) {
+        await createNewChat();
+        if (!currentConversationId) return;
+    }
 
     input.value = '';
     input.style.height = 'auto';
@@ -438,6 +442,8 @@ async function enviar() {
 
     let fullAiThinking = "";
     let fullAiContent = "";
+    let displayedThinkingLen = 0;
+    let displayedContentLen = 0;
     let inEmbeddedThink = false;
     let isThinking = false;
     let hasThought = false;
@@ -450,6 +456,50 @@ async function enviar() {
     let aiMsgDiv = addMessage('assistant', "", true);
     let isStreamActive = true;
     let timeoutReached = false;
+
+    // Renderizador fluido letra por letra (Typewriter a ~60fps)
+    const typewriterInterval = setInterval(() => {
+        if (timeoutReached || abortController.signal.aborted) {
+            clearInterval(typewriterInterval);
+            return;
+        }
+
+        let updated = false;
+
+        // 1. Animação fluida sincronizada com a velocidade dos tokens do bloco de raciocínio (<think>)
+        if (displayedThinkingLen < fullAiThinking.length) {
+            const pending = fullAiThinking.length - displayedThinkingLen;
+            const step = Math.max(1, Math.min(pending, Math.ceil(pending / 3)));
+            displayedThinkingLen += step;
+
+            const thoughtContent = aiMsgDiv.querySelector('.thought-content');
+            if (thoughtContent) {
+                thoughtContent.innerHTML = renderMarkdown(fullAiThinking.slice(0, displayedThinkingLen));
+                const thoughtBody = aiMsgDiv.querySelector('.thought-body');
+                if (thoughtBody) thoughtBody.scrollTop = thoughtBody.scrollHeight;
+            }
+            updated = true;
+        }
+
+        // 2. Animação fluida sincronizada com a velocidade real dos tokens da resposta principal
+        if (displayedContentLen < fullAiContent.length) {
+            const pending = fullAiContent.length - displayedContentLen;
+            const step = Math.max(1, Math.min(pending, Math.ceil(pending / 3)));
+            displayedContentLen += step;
+
+            const bubble = aiMsgDiv.querySelector('.bubble');
+            if (bubble) {
+                bubble.innerHTML = renderMarkdown(fullAiContent.slice(0, displayedContentLen));
+                applyCodeBlockFeatures(aiMsgDiv);
+            }
+            updated = true;
+        }
+
+        if (updated) {
+            const chatBox = document.getElementById('chat-messages');
+            if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }, 12);
 
     // Atualizador em tempo real das métricas e temporizadores
     const liveStatsInterval = setInterval(() => {
@@ -521,20 +571,25 @@ async function enviar() {
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                if (done || timeoutReached) break;
+                if (timeoutReached) break;
 
                 // Recebendo dados -> renova/limpa o timeout
                 clearTimeout(timeoutId);
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = (partialLine + chunk).split('\n');
-                partialLine = lines.pop(); // Guarda a última parte (incompleta)
+                const chunk = done ? decoder.decode() : decoder.decode(value, { stream: true });
+                const combined = partialLine + chunk;
+                const lines = done ? [combined] : combined.split('\n');
+                partialLine = done ? "" : lines.pop(); // Guarda a última parte (incompleta)
 
                 for (const line of lines) {
                     if (!line.trim() || line.startsWith(':')) continue;
                     try {
                         const json = JSON.parse(line);
                         if (json.error) {
+                            // Se for erro transitório de "think" que o chat.php reprocessa automaticamente sem think, aguarda o próximo chunk
+                            if (shouldThink && /think/i.test(json.error)) {
+                                continue;
+                            }
                             aiMsgDiv.querySelector('.bubble').innerHTML = "❌ " + escapeHtml(json.error);
                             timeoutReached = true;
                             break;
@@ -568,13 +623,6 @@ async function enviar() {
 
                                 fullAiThinking += json.message.thinking;
                                 streamTokens++;
-
-                                const thoughtContent = aiMsgDiv.querySelector('.thought-content');
-                                if (thoughtContent) {
-                                    thoughtContent.innerHTML = renderMarkdown(fullAiThinking);
-                                    const thoughtBody = aiMsgDiv.querySelector('.thought-body');
-                                    if (thoughtBody) thoughtBody.scrollTop = thoughtBody.scrollHeight;
-                                }
                             }
 
                             // 2. Processa resposta do modelo (message.content)
@@ -631,22 +679,11 @@ async function enviar() {
                                     } else {
                                         fullAiThinking += processChunk;
                                     }
-
-                                    const thoughtContent = aiMsgDiv.querySelector('.thought-content');
-                                    if (thoughtContent) {
-                                        thoughtContent.innerHTML = renderMarkdown(fullAiThinking);
-                                    }
                                 } else {
                                     fullAiContent += rawChunk;
                                 }
 
                                 streamTokens++;
-
-                                const bubble = aiMsgDiv.querySelector('.bubble');
-                                if (bubble) {
-                                    bubble.innerHTML = renderMarkdown(fullAiContent);
-                                    applyCodeBlockFeatures(aiMsgDiv);
-                                }
                             }
                         }
 
@@ -655,13 +692,11 @@ async function enviar() {
                             finalOllamaMetrics = json;
                         }
 
-                        const chatBox = document.getElementById('chat-messages');
-                        if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
-
                     } catch (e) {
                         console.warn("Falha ao processar linha JSON:", line);
                     }
                 }
+                if (done) break;
             }
         } catch (err) {
             if (err.name === 'AbortError') {
@@ -675,6 +710,16 @@ async function enviar() {
         } finally {
             isStreamActive = false;
             clearInterval(liveStatsInterval);
+
+            // Aguarda o typewriter concluir suavemente as letras restantes antes de finalizar
+            while (
+                !timeoutReached &&
+                !abortController.signal.aborted &&
+                (displayedThinkingLen < fullAiThinking.length || displayedContentLen < fullAiContent.length)
+            ) {
+                await new Promise(r => setTimeout(r, 16));
+            }
+            clearInterval(typewriterInterval);
 
             // Finaliza estado de pensamento se ainda estiver marcado como ativo
             if (isThinking) {
@@ -692,9 +737,13 @@ async function enviar() {
 
             // Garante renderização final completa do Markdown
             const bubble = aiMsgDiv.querySelector('.bubble');
-            if (bubble && fullAiContent !== "") {
-                bubble.innerHTML = renderMarkdown(fullAiContent);
-                applyCodeBlockFeatures(aiMsgDiv);
+            if (bubble) {
+                if (fullAiContent !== "") {
+                    bubble.innerHTML = renderMarkdown(fullAiContent);
+                    applyCodeBlockFeatures(aiMsgDiv);
+                } else if (fullAiThinking === "" && bubble.querySelector('.typing-indicator')) {
+                    bubble.innerHTML = "⚠️ Nenhuma resposta foi retornada pelo modelo no Ollama. Verifique os logs do Ollama ou a memória de vídeo (VRAM) disponível.";
+                }
             }
 
             const thoughtContent = aiMsgDiv.querySelector('.thought-content');
@@ -748,6 +797,7 @@ async function enviar() {
     } catch (globalErr) {
         isStreamActive = false;
         clearInterval(liveStatsInterval);
+        clearInterval(typewriterInterval);
         if (globalErr.name !== 'AbortError') {
             console.error("Global fetch error:", globalErr);
             aiMsgDiv.querySelector('.bubble').innerHTML = "❌ Erro crítico: " + escapeHtml(globalErr.message);
