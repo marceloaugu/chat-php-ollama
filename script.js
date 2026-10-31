@@ -111,10 +111,118 @@ async function loadHistory() {
     data.forEach(chat => {
         const item = document.createElement('div');
         item.className = `history-item ${chat.id == currentConversationId ? 'active' : ''}`;
-        item.innerText = chat.title;
         item.onclick = () => selectChat(chat.id);
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'history-title';
+        titleSpan.innerText = chat.title;
+        titleSpan.title = chat.title;
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'history-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'history-action-btn edit';
+        editBtn.title = 'Renomear conversa';
+        editBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
+        editBtn.onclick = (e) => startRenameChat(chat.id, chat.title, item, e);
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'history-action-btn delete';
+        delBtn.title = 'Excluir conversa';
+        delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+        delBtn.onclick = (e) => deleteChat(chat.id, chat.title, e);
+
+        actionsDiv.appendChild(editBtn);
+        actionsDiv.appendChild(delBtn);
+
+        item.appendChild(titleSpan);
+        item.appendChild(actionsDiv);
         list.appendChild(item);
     });
+}
+
+function startRenameChat(id, currentTitle, itemEl, event) {
+    if (event) event.stopPropagation();
+
+    const titleSpan = itemEl.querySelector('.history-title');
+    const actionsDiv = itemEl.querySelector('.history-actions');
+    if (!titleSpan) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'history-rename-input';
+    input.value = currentTitle;
+    input.maxLength = 100;
+    input.onclick = (e) => e.stopPropagation();
+
+    if (actionsDiv) actionsDiv.style.display = 'none';
+    titleSpan.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finishRename = async (save) => {
+        if (finished) return;
+        finished = true;
+        const newTitle = input.value.trim();
+        if (save && newTitle && newTitle !== currentTitle) {
+            try {
+                const formData = new FormData();
+                formData.append('conversation_id', id);
+                formData.append('title', newTitle);
+                await fetch('api.php?action=rename_conversation', {
+                    method: 'POST',
+                    body: formData
+                });
+            } catch (err) {
+                console.error('Erro ao renomear conversa:', err);
+            }
+        }
+        loadHistory();
+    };
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            finishRename(true);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            finishRename(false);
+        }
+    });
+
+    input.addEventListener('blur', () => finishRename(true));
+}
+
+async function deleteChat(id, title, event) {
+    if (event) event.stopPropagation();
+    if (!confirm(`Deseja realmente excluir a conversa "${title}"?`)) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('conversation_id', id);
+        const res = await fetch('api.php?action=delete_conversation', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await res.json();
+        if (result.success) {
+            if (currentConversationId == id) {
+                const listRes = await fetch('api.php?action=list_conversations');
+                const remaining = await listRes.json();
+                if (Array.isArray(remaining) && remaining.length > 0) {
+                    await selectChat(remaining[0].id);
+                } else {
+                    await createNewChat();
+                }
+            } else {
+                loadHistory();
+            }
+        }
+    } catch (err) {
+        console.error('Erro ao excluir conversa:', err);
+    }
 }
 
 async function selectChat(id) {
@@ -172,18 +280,32 @@ function applyCodeBlockFeatures(container) {
     container.querySelectorAll('pre').forEach((pre) => {
         const code = pre.querySelector('code');
         if (code && !pre.parentElement.classList.contains('code-wrapper')) {
+            const langMatch = (code.className || '').match(/language-([a-zA-Z0-9_-]+)/);
+            const langLabel = langMatch ? langMatch[1].toLowerCase() : 'código';
+
             hljs.highlightElement(code);
 
             const wrapper = document.createElement('div');
             wrapper.className = 'code-wrapper';
             pre.parentNode.insertBefore(wrapper, pre);
-            wrapper.appendChild(pre);
+
+            const header = document.createElement('div');
+            header.className = 'code-header';
+
+            const langSpan = document.createElement('span');
+            langSpan.className = 'code-lang';
+            langSpan.innerText = langLabel;
 
             const btn = document.createElement('button');
             btn.className = 'copy-btn';
-            btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg> Copiar';
+            btn.title = 'Copiar trecho de código';
+            btn.innerHTML = '<i class="fa-regular fa-copy"></i> <span>Copiar código</span>';
             btn.onclick = () => copyToClipboard(code.innerText, btn);
-            wrapper.appendChild(btn);
+
+            header.appendChild(langSpan);
+            header.appendChild(btn);
+            wrapper.appendChild(header);
+            wrapper.appendChild(pre);
         }
     });
 }
@@ -212,13 +334,20 @@ function renderMetricsHtml(metrics, isLive = false, liveData = null) {
             </div>`;
     }
 
-    if (!metrics) return '';
+    const copyResponseBtnHtml = `
+        <button class="copy-response-btn" onclick="copyMessageResponse(this)" title="Copiar resposta completa">
+            <i class="fa-regular fa-copy"></i> <span>Copiar resposta</span>
+        </button>`;
+
+    if (!metrics) {
+        return `<div class="message-metrics-container">${copyResponseBtnHtml}</div>`;
+    }
 
     let m = metrics;
     if (typeof m === 'string') {
-        try { m = JSON.parse(m); } catch (e) { return ''; }
+        try { m = JSON.parse(m); } catch (e) { return `<div class="message-metrics-container">${copyResponseBtnHtml}</div>`; }
     }
-    if (!m) return '';
+    if (!m) return `<div class="message-metrics-container">${copyResponseBtnHtml}</div>`;
 
     const speed = m.tok_per_sec || (m.eval_duration > 0 ? (m.eval_count / (m.eval_duration / 1e9)).toFixed(1) : '0.0');
     const time = m.total_sec || (m.total_duration ? (m.total_duration / 1e9).toFixed(1) : (m.eval_sec || '0.0'));
@@ -259,6 +388,7 @@ function renderMetricsHtml(metrics, isLive = false, liveData = null) {
                     ${tooltipRows}
                 </div>
             </div>
+            ${copyResponseBtnHtml}
         </div>`;
 }
 
@@ -368,23 +498,45 @@ function addMessage(role, content, isStreaming = false, metrics = null) {
     // Destaca códigos e adiciona botão de copiar
     applyCodeBlockFeatures(msgDiv);
 
-    // Adiciona pill de métricas se houver
-    if (metrics) {
-        const metricsWrap = document.createElement('div');
-        metricsWrap.className = 'message-metrics-wrap';
-        metricsWrap.innerHTML = renderMetricsHtml(metrics);
-        msgDiv.appendChild(metricsWrap);
-    }
+    // Adiciona barra de métricas e botão de copiar resposta
+    const metricsWrap = document.createElement('div');
+    metricsWrap.className = 'message-metrics-wrap';
+    metricsWrap.innerHTML = renderMetricsHtml(metrics);
+    msgDiv.appendChild(metricsWrap);
 
     chatBox.scrollTop = chatBox.scrollHeight;
     return msgDiv;
 }
 
+function copyMessageResponse(btn) {
+    const msgDiv = btn.closest('.message');
+    if (!msgDiv) return;
+    const bubble = msgDiv.querySelector('.bubble');
+    if (!bubble) return;
+
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.code-header, .copy-btn').forEach(el => el.remove());
+    const cleanText = clone.innerText.trim();
+    copyToClipboard(cleanText, btn);
+}
+
 async function copyToClipboard(text, btn) {
     try {
-        await navigator.clipboard.writeText(text);
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
         const originalHTML = btn.innerHTML;
-        btn.innerHTML = 'Copiado!';
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> <span>Copiado!</span>';
         btn.classList.add('copied');
         setTimeout(() => {
             btn.innerHTML = originalHTML;

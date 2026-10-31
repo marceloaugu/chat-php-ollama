@@ -120,12 +120,30 @@ elseif ($action === 'new_conversation') {
     echo json_encode(['id' => $pdo->lastInsertId()]);
 }
 
-elseif ($action === 'delete_conversation') {
+elseif ($action === 'rename_conversation') {
     if (!$pdo) {
         echo json_encode(['success' => false, 'error' => $db_error]);
         exit;
     }
     $conv_id = $_POST['conversation_id'] ?? 0;
+    $title = trim($_POST['title'] ?? '');
+    if (!$conv_id || $title === '') {
+        echo json_encode(['success' => false, 'error' => 'ID ou título inválido']);
+        exit;
+    }
+    $stmt = $pdo->prepare("UPDATE conversations SET title = ? WHERE id = ?");
+    $stmt->execute([mb_substr($title, 0, 100), $conv_id]);
+    echo json_encode(['success' => true, 'title' => mb_substr($title, 0, 100)]);
+}
+
+elseif ($action === 'delete_conversation') {
+    if (!$pdo) {
+        echo json_encode(['success' => false, 'error' => $db_error]);
+        exit;
+    }
+    $conv_id = $_POST['conversation_id'] ?? $_GET['conversation_id'] ?? 0;
+    $stmt_msgs = $pdo->prepare("DELETE FROM messages WHERE conversation_id = ?");
+    $stmt_msgs->execute([$conv_id]);
     $stmt = $pdo->prepare("DELETE FROM conversations WHERE id = ?");
     $stmt->execute([$conv_id]);
     echo json_encode(['success' => true]);
