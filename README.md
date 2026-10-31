@@ -63,7 +63,9 @@ chat-php-ollama/
 ├── .env.example        # Modelo de variáveis de ambiente (sem credenciais reais)
 ├── .gitignore          # Regras de proteção de credenciais, dumps e arquivos locais
 ├── Dockerfile          # Imagem Docker (PHP 8.4 + Apache + pdo_mysql + curl)
+├── LICENSE             # Licença MIT
 ├── README.md           # Documentação técnica do projeto
+├── THIRD_PARTY_NOTICES # Avisos de componentes de terceiros
 ├── api.php             # Endpoints JSON: histórico, /api/tags, /api/ps e troca de modelo em VRAM
 ├── chat.php            # Endpoint de streaming, RAG simplificado e chamada a /api/chat
 ├── db.php              # Leitor nativo de .env, conexão PDO e auto-migração do banco de dados
@@ -333,3 +335,9 @@ Métricas calculadas por `chat.php` e gravadas na coluna `metrics` do banco de d
 1. **Exclusividade da API Nativa do Ollama:** Este projeto consome os endpoints nativos `/api/*` do Ollama. Para utilizar endpoints compatíveis com OpenAI (`/v1/chat/completions`), utilize o fork específico [**`marceloaugu/chat-php-openai`**](https://github.com/marceloaugu/chat-php-openai).
 2. **RAG Simplificado:** A recuperação de contexto baseia-se em busca textual por palavras-chave (`SQL LIKE`) nas mensagens anteriores da mesma conversa, sem indexação vetorial.
 3. **Timeout de Carregamento Inicial de Modelos Grandes:** O pré-carregamento via `api.php?action=run_model` possui timeout de cURL de `60s` e o primeiro token no frontend (`script.js`) possui timeout de `30s`. Ao carregar modelos muito pesados pela primeira vez, a requisição pode atingir o tempo limite enquanto o Ollama ainda transfere os pesos para a memória.
+
+---
+
+## 13. Licença
+
+Distribuído sob a [licença MIT](LICENSE). Os avisos de componentes de terceiros embutidos no código estão em [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
