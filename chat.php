@@ -102,12 +102,14 @@ $data = [
     "model" => $model,
     "messages" => $messages,
     "stream" => true,
-    "think" => $think_enabled,
     "keep_alive" => "1h", // Mantém o modelo ativo na VRAM para TTFT imediato
     "options" => [
         "num_gpu" => 99 // Garante que as camadas sejam enviadas para a GPU
     ]
 ];
+if ($think_enabled) {
+    $data["think"] = true;
+}
 
 // Configura cabeçalhos para streaming imediato (desativa buffers de proxies e Apache)
 header('Content-Type: text/event-stream; charset=utf-8');
@@ -129,25 +131,19 @@ flush();
 $full_thinking = "";
 $full_content = "";
 $final_metrics = null;
-
-$ch = curl_init($url);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type:application/json'));
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5); // Timeout de 5s para conectar
-curl_setopt($ch, CURLOPT_TCP_NODELAY, 1);     // Envia pacotes imediatamente sem atraso de Nagle
-curl_setopt($ch, CURLOPT_BUFFERSIZE, 128);    // Envia cada token assim que chegar
 $buffer = "";
-curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($ch, $data) use (&$full_thinking, &$full_content, &$final_metrics, &$buffer) {
-    echo $data;
+
+$processStreamChunk = function($chunk) use (&$full_thinking, &$full_content, &$final_metrics, &$buffer) {
+    echo $chunk;
     if (ob_get_level() > 0) ob_flush();
     flush();
     
-    $buffer .= $data;
+    $buffer .= $chunk;
     $lines = explode("\n", $buffer);
     $buffer = array_pop($lines); // Guarda a parte final incompleta
     
     foreach ($lines as $line) {
+        $line = trim($line);
         if (!empty($line)) {
             $json = json_decode($line, true);
             if ($json) {
@@ -184,18 +180,62 @@ curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($ch, $data) use (&$full_thinkin
             }
         }
     }
-    return strlen($data);
-});
+    return strlen($chunk);
+};
 
-$exec_result = curl_exec($ch);
+$payloadJson = json_encode($data);
 
-if ($exec_result === false) {
-    // Se o cURL falhar (ex: Ollama offline), avisa o frontend
-    $error = curl_error($ch);
-    echo json_encode(["error" => "O servidor está offline: $error"]);
+if (function_exists('curl_init')) {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payloadJson);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type:application/json'));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5); // Timeout de 5s para conectar
+    if (defined('CURL_IPRESOLVE_V4')) {
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    }
+    curl_setopt($ch, CURLOPT_TCP_NODELAY, 1);     // Envia pacotes imediatamente sem atraso de Nagle
+    curl_setopt($ch, CURLOPT_BUFFERSIZE, 128);    // Envia cada token assim que chegar
+    curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($ch, $chunk) use ($processStreamChunk) {
+        return $processStreamChunk($chunk);
+    });
+
+    $exec_result = curl_exec($ch);
+
+    if ($exec_result === false) {
+        $error = curl_error($ch);
+        echo json_encode(["error" => "O servidor está offline: $error"]) . "\n";
+    }
+
+    curl_close($ch);
+} else {
+    // Fallback nativo via stream HTTP quando extension=curl não está ativa no PHP (ex: XAMPP local)
+    $ctx = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\nAccept: application/x-ndjson\r\n",
+            'content' => $payloadJson,
+            'timeout' => 180,
+            'ignore_errors' => true
+        ]
+    ]);
+    $fp = @fopen($url, 'r', false, $ctx);
+    if ($fp === false) {
+        $err = error_get_last()['message'] ?? 'Falha ao conectar ao Ollama';
+        echo json_encode(["error" => "O servidor está offline: $err"]) . "\n";
+        flush();
+    } else {
+        stream_set_timeout($fp, 180);
+        while (!feof($fp)) {
+            $line = fgets($fp, 8192);
+            if ($line === false) {
+                break;
+            }
+            $processStreamChunk($line);
+        }
+        fclose($fp);
+    }
 }
-
-curl_close($ch);
 
 // 5. Salva a resposta da IA no banco
 $full_response = "";

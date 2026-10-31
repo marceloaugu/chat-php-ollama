@@ -795,96 +795,101 @@ async function checkServiceStatus() {
 
 async function fetchModels() {
     try {
-        const [modelsRes, runningRes] = await Promise.all([
-            fetch('api.php?action=list_models'),
-            fetch('api.php?action=list_running_models')
-        ]);
+        const modelsRes = await fetch('api.php?action=list_models');
         const data = await modelsRes.json();
-        const runningData = await runningRes.json();
+
+        let runningData = { models: [] };
+        try {
+            const runningRes = await fetch('api.php?action=list_running_models');
+            if (runningRes.ok) {
+                runningData = await runningRes.json();
+            }
+        } catch (runErr) {
+            console.warn("Aviso ao consultar /api/ps:", runErr);
+        }
+
         const select = document.getElementById('model-select');
         
-        const installedModels = (data.models || []).map(m => m.name);
-        const runningModels = (runningData.models || []).map(m => m.name);
+        const rawModels = Array.isArray(data.models) ? data.models : (Array.isArray(data.data) ? data.data : []);
+        const installedModels = rawModels
+            .map(m => (typeof m === 'string' ? m : (m.name || m.model || m.id || '')))
+            .filter(Boolean);
+        const runningModels = (runningData.models || [])
+            .map(m => (typeof m === 'string' ? m : (m.name || m.model || m.id || '')))
+            .filter(Boolean);
         
         installedModelsGlobal = installedModels;
         
+        const normalizeModel = (modelId) => (modelId || '').toLowerCase().trim().replace(/:latest$/, '');
+
         // Função auxiliar para verificar se o modelo está instalado (ignorando o sufixo :latest)
         const checkInstalled = (modelId) => {
-            const cleanTarget = modelId.replace(/:latest$/, '');
-            return installedModels.some(m => m.replace(/:latest$/, '') === cleanTarget);
+            const cleanTarget = normalizeModel(modelId);
+            return installedModels.some(m => normalizeModel(m) === cleanTarget);
         };
 
         // Função auxiliar para verificar se o modelo está rodando
         const checkRunning = (modelId) => {
-            const cleanTarget = modelId.replace(/:latest$/, '');
-            return runningModels.some(m => m.replace(/:latest$/, '') === cleanTarget);
+            const cleanTarget = normalizeModel(modelId);
+            return runningModels.some(m => normalizeModel(m) === cleanTarget);
         };
 
         select.innerHTML = '';
 
-        // Add Target Models
-        const targetGroup = document.createElement('optgroup');
-        targetGroup.label = "Modelos Sugeridos";
-        
-        TARGET_MODELS.forEach(target => {
-            const opt = document.createElement('option');
-            // Se o usuário tiver instalado com ":latest", usamos o nome exato retornado pelo Ollama
-            const exactInstalledName = (data.models || []).find(m => m.name.replace(/:latest$/, '') === target.id.replace(/:latest$/, ''));
-            const modelValue = exactInstalledName ? exactInstalledName.name : target.id;
-            opt.value = modelValue;
-            
-            const isInstalled = checkInstalled(target.id);
-            const isRunning = checkRunning(target.id);
-            
-            if (isRunning) {
-                opt.innerText = `${target.name} 🚀 (Rodando / RAM)`;
-                opt.style.fontWeight = 'bold';
-                opt.style.color = '#3fb950';
-            } else {
-                opt.innerText = `${target.name} ${isInstalled ? '✅ (Instalado)' : '⏳ (Pull necessário)'}`;
-                if (!isInstalled) opt.style.color = '#888';
-            }
-            targetGroup.appendChild(opt);
-        });
-        select.appendChild(targetGroup);
-
-        // Add other installed models not in target list
-        const otherModels = installedModels.filter(m => !TARGET_MODELS.some(t => t.id.replace(/:latest$/, '') === m.replace(/:latest$/, '')));
-        if (otherModels.length > 0) {
-            const otherGroup = document.createElement('optgroup');
-            otherGroup.label = "Outros Modelos Instalados";
-            otherModels.forEach(m => {
+        // 1. Modelos efetivamente instalados no Ollama (exibidos no topo!)
+        const chatCapableInstalledModels = installedModels.filter(m => !m.toLowerCase().includes('embed'));
+        if (installedModels.length > 0) {
+            const installedGroup = document.createElement('optgroup');
+            installedGroup.label = `Modelos Instalados no Ollama (${installedModels.length})`;
+            installedModels.forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m;
+                const matchedTarget = TARGET_MODELS.find(t => normalizeModel(t.id) === normalizeModel(m));
+                const displayName = matchedTarget ? `${matchedTarget.name} [${m}]` : m;
                 const isRunning = checkRunning(m);
+                const isReasoning = isReasoningModel(m);
+                const reasonBadge = isReasoning ? ' 🧠' : '';
+
                 if (isRunning) {
-                    opt.innerText = `${m} 🚀 (Rodando / RAM)`;
+                    opt.innerText = `${displayName}${reasonBadge} 🚀 (Rodando / VRAM)`;
                     opt.style.fontWeight = 'bold';
                     opt.style.color = '#3fb950';
                 } else {
-                    opt.innerText = `${m} ✅`;
+                    opt.innerText = `${displayName}${reasonBadge} ✅ (Instalado)`;
                 }
-                otherGroup.appendChild(opt);
+                installedGroup.appendChild(opt);
             });
-            select.appendChild(otherGroup);
+            select.appendChild(installedGroup);
         }
 
-        // Filtra apenas modelos reais de chat instalados (ignora modelos de embedding como nomic)
-        const chatCapableInstalledModels = installedModels.filter(m => !m.includes('embed'));
+        // 2. Modelos Sugeridos que ainda não estão instalados
+        const uninstalledTargets = TARGET_MODELS.filter(target => !checkInstalled(target.id));
+        if (uninstalledTargets.length > 0) {
+            const targetGroup = document.createElement('optgroup');
+            targetGroup.label = installedModels.length > 0 ? "Modelos Sugeridos (Pull necessário)" : "Modelos Sugeridos (Nenhum modelo detectado no Ollama)";
+            
+            uninstalledTargets.forEach(target => {
+                const opt = document.createElement('option');
+                opt.value = target.id;
+                opt.innerText = `${target.name} ⏳ (Pull necessário)`;
+                opt.style.color = '#888';
+                targetGroup.appendChild(opt);
+            });
+            select.appendChild(targetGroup);
+        }
 
-        // Restore last selected model
+        // Seleciona modelo ativo na VRAM, ou último selecionado (se instalado), ou primeiro instalado
         const lastModel = localStorage.getItem('selectedModel');
-        if (lastModel && Array.from(select.options).some(o => o.value === lastModel)) {
-            select.value = lastModel;
+        const activeRunning = runningModels.find(m => !m.toLowerCase().includes('embed'));
+        if (lastModel && checkInstalled(lastModel)) {
+            const exactMatch = installedModels.find(m => normalizeModel(m) === normalizeModel(lastModel));
+            select.value = exactMatch || lastModel;
+        } else if (activeRunning && Array.from(select.options).some(o => o.value === activeRunning)) {
+            select.value = activeRunning;
         } else if (chatCapableInstalledModels.length > 0) {
-            // Default para o primeiro modelo sugerido que esteja instalado, ou o primeiro de chat
-            const firstInstalled = TARGET_MODELS.find(t => checkInstalled(t.id));
-            if (firstInstalled) {
-                const exactInstalledName = (data.models || []).find(m => m.name.replace(/:latest$/, '') === firstInstalled.id.replace(/:latest$/, ''));
-                select.value = exactInstalledName ? exactInstalledName.name : firstInstalled.id;
-            } else {
-                select.value = chatCapableInstalledModels[0];
-            }
+            select.value = chatCapableInstalledModels[0];
+        } else if (installedModels.length > 0) {
+            select.value = installedModels[0];
         }
         updateReasoningUI();
     } catch (e) {

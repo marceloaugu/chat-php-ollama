@@ -25,8 +25,10 @@ if ($pass === false || $pass === null) {
 }
 $charset = 'utf8mb4';
 
-$ollama_host = $_ENV['OLLAMA_HOST'] ?? getenv('OLLAMA_HOST') ?: 'http://localhost:11434';
-$ollama_host = rtrim($ollama_host, '/');
+$ollama_host = $_ENV['OLLAMA_HOST'] ?? getenv('OLLAMA_HOST') ?: 'http://127.0.0.1:11434';
+$ollama_host = rtrim(trim($ollama_host), '/');
+// Remove sufixos acidentais /api ou /v1 caso tenham sido incluídos na variável OLLAMA_HOST
+$ollama_host = preg_replace('#/(api|v1)$#i', '', $ollama_host);
 
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -34,19 +36,39 @@ $options = [
     PDO::ATTR_EMULATE_PREPARES   => false,
 ];
 
+$pdo = null;
+$db_error = null;
+
+/**
+ * Conecta ao MySQL/MariaDB e inicializa o banco caso ainda não exista.
+ */
+function connect_and_setup_db($host, $db, $user, $pass, $charset, $options) {
+    try {
+        $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+        return new PDO($dsn, $user, $pass, $options);
+    } catch (\PDOException $e) {
+        // Se o erro for de acesso negado (1045), propaga para tentar credencial alternativa
+        if ((int)$e->getCode() === 1045 || strpos($e->getMessage(), '1045') !== false) {
+            throw $e;
+        }
+        $dsn_setup = "mysql:host=$host;charset=$charset";
+        $pdo = new PDO($dsn_setup, $user, $pass, $options);
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET $charset COLLATE utf8mb4_unicode_ci");
+        $pdo->exec("USE `$db`");
+        return $pdo;
+    }
+}
+
 try {
-     // Tenta se conectar diretamente ao banco primeiro
      try {
-         $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
-         $pdo = new PDO($dsn, $user, $pass, $options);
-     } catch (\PDOException $e) {
-         // Se falhar (ex: banco de dados ainda não existe), tenta o setup automático
-         $dsn_setup = "mysql:host=$host;charset=$charset";
-         $pdo = new PDO($dsn_setup, $user, $pass, $options);
-         
-         // Cria banco de dados se não existir
-         $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET $charset COLLATE utf8mb4_unicode_ci");
-         $pdo->exec("USE `$db`");
+         $pdo = connect_and_setup_db($host, $db, $user, $pass, $charset, $options);
+     } catch (\PDOException $authEx) {
+         // Fallback automático para ambiente XAMPP local (root sem senha)
+         if ($user !== 'root' && ($host === 'localhost' || $host === '127.0.0.1')) {
+             $pdo = connect_and_setup_db($host, $db, 'root', '', $charset, $options);
+         } else {
+             throw $authEx;
+         }
      }
      
      // Cria tabela conversations se não existir
@@ -80,6 +102,9 @@ try {
      }
      
 } catch (\PDOException $e) {
-     die("Erro ao conectar ou configurar o banco de dados: " . $e->getMessage());
+     $db_error = $e->getMessage();
+     if (!defined('API_ALLOW_NO_DB')) {
+         die("Erro ao conectar ou configurar o banco de dados: " . $db_error);
+     }
 }
 ?>
