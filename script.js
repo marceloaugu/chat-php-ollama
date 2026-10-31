@@ -32,12 +32,18 @@ function isReasoningModel(modelId) {
     
     // Padrões conhecidos de modelos com raciocínio integrado (Chain-of-Thought)
     return name.includes('deepseek-r1') ||
+           name.includes('qwen3') ||
+           name.includes('qwen-3') ||
            name.includes('qwq') ||
            name.includes('marco-o1') ||
+           name.includes('phi-4-reasoning') ||
+           name.includes('glm-z1') ||
+           name.includes('cogito') ||
            name.includes('reasoner') ||
            name.includes('reasoning') ||
+           name.includes('thinking') ||
            /\br1\b/.test(name) ||
-           /\bo[13]\b/.test(name);
+           /\bo[134]\b/.test(name);
 }
 
 function updateReasoningUI() {
